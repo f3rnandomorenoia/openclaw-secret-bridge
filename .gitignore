@@ -1,0 +1,7 @@
+node_modules/
+var/
+*.env
+*.key
+*.pem
+*.log
+.DS_Store

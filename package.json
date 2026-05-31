@@ -1,0 +1,21 @@
+{
+  "name": "openclaw-secret-bridge",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "One-time encrypted password handoff bridge for OpenClaw browser automation.",
+  "scripts": {
+    "start": "node server.js",
+    "worker": "node worker.js",
+    "create": "node bin/create-request.js",
+    "request-from-cdp": "node bin/request-from-cdp.js",
+    "smoke": "bash bin/smoke-test.sh"
+  },
+  "bin": {
+    "secret-bridge-create": "bin/create-request.js",
+    "secret-bridge-from-cdp": "bin/request-from-cdp.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
