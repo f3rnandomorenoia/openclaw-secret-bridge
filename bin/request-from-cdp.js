@@ -51,8 +51,14 @@ const target = {
   clearFirst: args.clearFirst !== 'false'
 };
 
+if (args.loginHandoff) {
+  target.privacyMode = 'login-handoff';
+  target.submitAfter = true;
+  target.handoffWaitMs = args.handoffWaitMs ? Number(args.handoffWaitMs) : undefined;
+}
 if (args.submitAfter) target.submitAfter = true;
 if (args.submitSelector) target.submitSelector = args.submitSelector;
+if (args.successSelector) target.successSelector = args.successSelector;
 if (args.targetUrl) target.targetUrl = args.targetUrl;
 
 const payload = {
@@ -80,12 +86,25 @@ if (!res.ok || !data.ok) {
   process.exit(1);
 }
 
+if (args.loginHandoff && !args.noPrivacyOverlay) {
+  const overlayCdp = await openCdp(page.webSocketDebuggerUrl);
+  try {
+    await overlayCdp.send('Runtime.evaluate', {
+      awaitPromise: true,
+      expression: installPrivacyOverlayExpression()
+    });
+  } finally {
+    overlayCdp.close();
+  }
+}
+
 console.log(data.job.secretUrl);
 console.error(JSON.stringify({
   id: data.job.id,
   target,
   url: payload.url,
-  expiresAt: data.job.expiresAt
+  expiresAt: data.job.expiresAt,
+  loginHandoff: Boolean(args.loginHandoff)
 }, null, 2));
 
 function parseArgs(list) {
@@ -161,4 +180,30 @@ async function openCdp(wsUrl) {
     send,
     close: () => ws.close()
   };
+}
+
+function installPrivacyOverlayExpression() {
+  return `(() => {
+    const id = 'secret-bridge-privacy-overlay';
+    document.getElementById(id)?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = id;
+    overlay.setAttribute('aria-hidden', 'true');
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: '2147483647',
+      background: '#0f172a',
+      color: '#f8fafc',
+      display: 'grid',
+      placeItems: 'center',
+      font: '16px system-ui, -apple-system, Segoe UI, sans-serif',
+      textAlign: 'center',
+      padding: '24px',
+      pointerEvents: 'auto'
+    });
+    overlay.innerHTML = '<div><div style="font-size:22px;font-weight:800;margin-bottom:8px">Login privado en curso</div><div style="max-width:460px;line-height:1.45;color:#cbd5e1">Secret Bridge esta pegando la contrasena. La pagina queda tapada hasta que termine el handoff.</div></div>';
+    document.documentElement.appendChild(overlay);
+    return true;
+  })()`;
 }

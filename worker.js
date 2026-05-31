@@ -115,14 +115,89 @@ async function insertSecretText(cdp, secretBuffer) {
   }
 }
 
+async function getPageInfo(cdp) {
+  const result = await cdp.send('Runtime.evaluate', {
+    returnByValue: true,
+    expression: `({
+      url: location.href,
+      title: document.title,
+      readyState: document.readyState
+    })`
+  });
+  return result.result?.value || {};
+}
+
+async function clearSecretField(cdp, selector) {
+  if (!selector) return;
+  const quoted = JSON.stringify(selector);
+  await cdp.send('Runtime.evaluate', {
+    awaitPromise: true,
+    returnByValue: true,
+    expression: `(() => {
+      const el = document.querySelector(${quoted});
+      if (!el) return false;
+      if ('value' in el) {
+        el.value = '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      el.blur();
+      return true;
+    })()`
+  }).catch(() => null);
+}
+
+async function removePrivacyOverlay(cdp) {
+  await cdp.send('Runtime.evaluate', {
+    awaitPromise: true,
+    expression: `document.getElementById('secret-bridge-privacy-overlay')?.remove()`
+  }).catch(() => null);
+}
+
+async function waitForLoginHandoff(cdp, target, originalUrl) {
+  const configured = target.handoffWaitMs ?? process.env.SECRET_BRIDGE_HANDOFF_WAIT_MS ?? 5000;
+  const timeoutMs = Math.max(0, Math.min(Number(configured) || 0, 30000));
+  const start = Date.now();
+  let lastInfo = await getPageInfo(cdp).catch(() => ({}));
+
+  while (Date.now() - start < timeoutMs) {
+    await sleep(250);
+    lastInfo = await getPageInfo(cdp).catch(() => lastInfo);
+    if (target.successSelector) {
+      const selector = JSON.stringify(target.successSelector);
+      const success = await cdp.send('Runtime.evaluate', {
+        returnByValue: true,
+        expression: `Boolean(document.querySelector(${selector}))`
+      }).catch(() => null);
+      if (success?.result?.value) return lastInfo;
+    }
+    if (originalUrl && lastInfo.url && lastInfo.url !== originalUrl && lastInfo.readyState === 'complete') {
+      return lastInfo;
+    }
+  }
+
+  return lastInfo;
+}
+
 async function pasteViaCdp(secretBuffer, target) {
+  const loginHandoff = target.privacyMode === 'login-handoff';
+  if (loginHandoff && !target.selector) {
+    throw new Error('login handoff requires a password selector');
+  }
+  if (loginHandoff && !target.submitAfter) {
+    throw new Error('login handoff requires submitAfter');
+  }
+
   const cdpHttp = target.cdpHttp || process.env.SECRET_BRIDGE_CDP_HTTP || 'http://127.0.0.1:3344';
   const targets = await listCdpTargets(cdpHttp);
   const page = pickTarget(targets, target);
   const cdp = await openCdp(page.webSocketDebuggerUrl);
+  let originalInfo = {};
+  let finalInfo = {};
   try {
     await cdp.send('Runtime.enable');
     await cdp.send('Page.bringToFront');
+    originalInfo = await getPageInfo(cdp).catch(() => ({}));
     if (target.selector) {
       const selector = JSON.stringify(target.selector);
       const clearFirst = target.clearFirst !== false;
@@ -146,7 +221,7 @@ async function pasteViaCdp(secretBuffer, target) {
     if (target.submitAfter) {
       if (target.submitSelector) {
         const submitSelector = JSON.stringify(target.submitSelector);
-        await cdp.send('Runtime.evaluate', {
+        const result = await cdp.send('Runtime.evaluate', {
           awaitPromise: true,
           returnByValue: true,
           expression: `(() => {
@@ -156,12 +231,25 @@ async function pasteViaCdp(secretBuffer, target) {
             return { ok: true };
           })()`
         });
+        if (!result.result?.value?.ok) {
+          throw new Error(result.result?.value?.reason || 'Could not click submit selector');
+        }
       } else {
         await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
         await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
       }
     }
+    if (loginHandoff) {
+      finalInfo = await waitForLoginHandoff(cdp, target, originalInfo.url);
+    } else {
+      finalInfo = await getPageInfo(cdp).catch(() => ({}));
+    }
+    return { loginHandoff, finalInfo };
   } finally {
+    if (loginHandoff) {
+      await clearSecretField(cdp, target.selector);
+      await removePrivacyOverlay(cdp);
+    }
     cdp.close();
   }
 }
@@ -173,7 +261,10 @@ async function handleJob(job) {
     if (target.kind === 'noop') {
       return 'noop target completed';
     }
-    await pasteViaCdp(secretBuffer, target);
+    const result = await pasteViaCdp(secretBuffer, target);
+    if (result.loginHandoff) {
+      return `login handoff completed: ${result.finalInfo?.url || 'unknown url'}`;
+    }
     return 'pasted via cdp';
   } finally {
     secretBuffer.fill(0);

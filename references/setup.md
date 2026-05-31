@@ -73,11 +73,14 @@ node bin/request-from-cdp.js \
   --selector '#password' \
   --submit-selector '#login' \
   --submit-after \
+  --login-handoff \
   --reason "Paste the password into the login field" \
   --field-label "Password"
 ```
 
 The command prints a one-time request URL.
+
+`--login-handoff` is recommended for login forms. It captures the screenshot, covers the target tab with a privacy overlay, forces immediate submit, and lets the worker clear the password field before the agent resumes automation in the logged-in session.
 
 ## Test
 

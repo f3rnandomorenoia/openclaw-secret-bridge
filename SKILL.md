@@ -25,6 +25,8 @@ The flow:
 4. Wait for the worker to claim the encrypted secret and paste it through CDP.
 5. Verify that the page advanced, without asking for or logging the plaintext.
 
+For login forms, prefer login handoff mode. In this mode the request command covers the login tab with a privacy overlay after taking the verification screenshot, the worker requires an immediate submit, waits briefly for login to settle, clears the password field if it is still present, removes the overlay, and only then returns control to the agent.
+
 ## Setup
 
 Run a bridge server somewhere the user can open, such as a LAN host, tunnel, or small VPS. The server only needs the public RSA key.
@@ -43,11 +45,14 @@ node bin/request-from-cdp.js \
   --selector '#password' \
   --submit-selector '#login-button' \
   --submit-after \
+  --login-handoff \
   --reason "Paste the password into the login form" \
   --field-label "Account password"
 ```
 
 Only send the printed `/r/...` URL to the user. Do not print or request the secret itself.
+
+After creating a login handoff request, do not inspect the tab with CDP, screenshots, or DOM reads until the worker marks the job complete. Continue automation only after the worker reports `login handoff completed`.
 
 ## Safety Rules
 
@@ -57,4 +62,4 @@ Only send the printed `/r/...` URL to the user. Do not print or request the secr
 - Use long random `SECRET_BRIDGE_ADMIN_TOKEN` and `SECRET_BRIDGE_WORKER_TOKEN` values.
 - Use short TTLs. Requests are one-use and default to 15 minutes.
 - Verify the target URL and screenshot before asking the user to type a secret.
-- Treat CDP as the remaining sensitive boundary. Once pasted, the secret is in the browser session; avoid DOM/screenshot reads after paste and prefer a worker CDP endpoint the agent cannot inspect.
+- Treat CDP as the remaining sensitive boundary. During login handoff, the agent must not connect to the same tab until completion. Once complete, the password should be gone, but the authenticated session is intentionally delegated to the agent.

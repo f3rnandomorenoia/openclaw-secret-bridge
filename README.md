@@ -10,6 +10,8 @@ It lets an agent ask a user for a password without seeing the plaintext:
 4. The server stores only ciphertext, with a short TTL and single-use token.
 5. A worker near the controlled browser decrypts in memory and pastes through CDP.
 
+For login forms, use login handoff mode. It hides the target tab behind a privacy overlay, requires immediate submit, and lets the worker clear the password field before the agent resumes work in the authenticated session.
+
 The repo is also an OpenClaw skill: `SKILL.md` describes when and how to use it.
 
 ## Install
@@ -79,6 +81,7 @@ npm run request-from-cdp -- \
   --selector '#password' \
   --submit-selector '#login' \
   --submit-after \
+  --login-handoff \
   --reason "Paste the password into the login field" \
   --field-label "Password"
 ```

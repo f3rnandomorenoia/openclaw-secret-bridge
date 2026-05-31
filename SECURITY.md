@@ -27,11 +27,20 @@ The main remaining exposure is the browser automation endpoint.
 
 At paste time, the secret exists in the browser session. If the same agent or another process can read from that CDP endpoint, it may be able to observe the DOM, screenshots, network, or page state after insertion.
 
+## Login Handoff Mode
+
+Login handoff mode is the recommended flow when the agent should work inside the authenticated session but must not see the password.
+
+It is enabled by creating a request with `--login-handoff`. The command captures the verification screenshot first, then installs a privacy overlay in the target tab. The worker enforces immediate submit, waits briefly for the login to settle, clears the password field if it is still present, removes the overlay, and then returns only a completion message.
+
+This prevents accidental agent observation of the password through screenshots or normal tab inspection during the handoff. It does not make a malicious same-user process impossible: a process with unrestricted local CDP access could still connect directly. For a stronger boundary, run the worker against a CDP endpoint that the agent cannot access, for example a separate browser process/profile owned by another OS user or a private `--remote-debugging-pipe` wrapper.
+
 For stronger isolation:
 
 - run the worker against a CDP endpoint that the agent cannot read from
 - use a separate browser profile/session for secret entry
-- avoid screenshots or DOM reads after pasting
+- use login handoff mode for login forms
+- avoid screenshots or DOM reads while handoff is pending
 - prefer submitting immediately after insert when appropriate
 
 ## Recommended Deployment
