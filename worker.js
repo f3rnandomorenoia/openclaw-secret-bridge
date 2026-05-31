@@ -34,7 +34,7 @@ async function api(path, options = {}) {
   return data;
 }
 
-function decryptSecret(encryptedSecret) {
+function decryptSecretToBuffer(encryptedSecret) {
   if (!encryptedSecret || encryptedSecret.alg !== 'RSA-OAEP-SHA256') {
     throw new Error('unsupported encrypted secret');
   }
@@ -45,7 +45,7 @@ function decryptSecret(encryptedSecret) {
       oaepHash: 'sha256'
     },
     Buffer.from(encryptedSecret.ciphertext, 'base64')
-  ).toString('utf8');
+  );
 }
 
 async function openCdp(wsUrl) {
@@ -106,7 +106,16 @@ function pickTarget(targets, target) {
   throw new Error('No matching CDP page target');
 }
 
-async function pasteViaCdp(secret, target) {
+async function insertSecretText(cdp, secretBuffer) {
+  let secret = secretBuffer.toString('utf8');
+  try {
+    await cdp.send('Input.insertText', { text: secret });
+  } finally {
+    secret = '';
+  }
+}
+
+async function pasteViaCdp(secretBuffer, target) {
   const cdpHttp = target.cdpHttp || process.env.SECRET_BRIDGE_CDP_HTTP || 'http://127.0.0.1:3344';
   const targets = await listCdpTargets(cdpHttp);
   const page = pickTarget(targets, target);
@@ -133,7 +142,7 @@ async function pasteViaCdp(secret, target) {
         throw new Error(result.result?.value?.reason || 'Could not focus selector');
       }
     }
-    await cdp.send('Input.insertText', { text: secret });
+    await insertSecretText(cdp, secretBuffer);
     if (target.submitAfter) {
       if (target.submitSelector) {
         const submitSelector = JSON.stringify(target.submitSelector);
@@ -158,16 +167,16 @@ async function pasteViaCdp(secret, target) {
 }
 
 async function handleJob(job) {
-  let secret = decryptSecret(job.encryptedSecret);
+  const secretBuffer = decryptSecretToBuffer(job.encryptedSecret);
   try {
     const target = job.target || {};
     if (target.kind === 'noop') {
       return 'noop target completed';
     }
-    await pasteViaCdp(secret, target);
+    await pasteViaCdp(secretBuffer, target);
     return 'pasted via cdp';
   } finally {
-    secret = '';
+    secretBuffer.fill(0);
   }
 }
 

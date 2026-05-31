@@ -57,3 +57,4 @@ Only send the printed `/r/...` URL to the user. Do not print or request the secr
 - Use long random `SECRET_BRIDGE_ADMIN_TOKEN` and `SECRET_BRIDGE_WORKER_TOKEN` values.
 - Use short TTLs. Requests are one-use and default to 15 minutes.
 - Verify the target URL and screenshot before asking the user to type a secret.
+- Treat CDP as the remaining sensitive boundary. Once pasted, the secret is in the browser session; avoid DOM/screenshot reads after paste and prefer a worker CDP endpoint the agent cannot inspect.

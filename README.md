@@ -30,6 +30,7 @@ Copy this repo or its `SKILL.md` into your OpenClaw skills path if your installa
 - Use long random admin and worker tokens.
 - Do not commit `.env`, `.pem`, `.key`, `var/`, screenshots, or job state.
 - Without TLS, a network attacker could modify the request page before it encrypts the secret.
+- The remaining sensitive boundary is CDP: once pasted, the secret is in the browser session. See `SECURITY.md`.
 
 ## Quick Start
 

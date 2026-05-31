@@ -622,9 +622,22 @@ async function handle(req, res) {
     const token = url.searchParams.get('token') || '';
     if (!validateSubmitToken(job, token)) return sendJson(res, 403, { ok: false, error: 'invalid_or_expired_token' });
     if (job.status !== 'pending') return sendJson(res, 409, { ok: false, error: 'job_not_pending' });
-    const body = await readJson(req);
-    if (body.alg !== 'RSA-OAEP-SHA256' || typeof body.ciphertext !== 'string') {
-      return sendJson(res, 400, { ok: false, error: 'bad_ciphertext' });
+    job.status = 'receiving';
+    job.submitToken = null;
+    saveJobs(jobs);
+    let body;
+    try {
+      body = await readJson(req);
+      if (body.alg !== 'RSA-OAEP-SHA256' || typeof body.ciphertext !== 'string') {
+        throw new Error('bad_ciphertext');
+      }
+    } catch (err) {
+      job.status = 'failed';
+      job.result = { ok: false, message: err.message || 'bad_submit' };
+      job.encryptedSecret = null;
+      saveJobs(jobs);
+      const status = err.statusCode || 400;
+      return sendJson(res, status, { ok: false, error: err.message || 'bad_submit' });
     }
     job.encryptedSecret = {
       alg: body.alg,
@@ -632,7 +645,6 @@ async function handle(req, res) {
       submittedAt: new Date().toISOString()
     };
     job.status = 'submitted';
-    job.submitToken = null;
     saveJobs(jobs);
     return sendJson(res, 200, { ok: true });
   }
